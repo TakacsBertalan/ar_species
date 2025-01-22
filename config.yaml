@@ -1,0 +1,19 @@
+all:
+  #parent folder of the outputs
+  output_fp: ar
+  #csv formatted list of samples, without header. One sample per line, first column: sample name ("tag")
+  samplelist_fp: samples.csv
+
+metaspades:
+  threads: 10
+  
+staramr:
+  threads: 10
+  
+kraken2:
+  db: "/media/deltagene/microbiome_2/k2_plsupf_16gb_20240112"
+  threads: 10
+
+blast:
+  db: "/media/deltagene/microbiome_2/blast_prok"
+  threads: 10
