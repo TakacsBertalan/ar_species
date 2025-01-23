@@ -2,40 +2,30 @@ import os
 import subprocess
 import csv
 from sys import argv
+from Bio import SeqIO
 
-def collect_scaffolds(resfinder, metaspades, res_scaffolds)
-    entries = {}
+def collect_scaffolds(metaspades, resfinder, res_scaffolds):
+	entries = {}
 	scaffolds = {}
 	i = 0
-    with open(resfinder, "r") as res:
+	first_line = True
+	name = metaspades.split("/")[-2].split("_")[0]
+	with open(resfinder, "r") as res:
 		for line in res:
 			if first_line:
 				first_line = False
 			else:
+
 				comp = line.split("\t")
+				print(comp)
 				if "unknown" not in comp[2]:
-				entries[str(i)] = [name, comp[1], comp[2], comp[3], comp[4], comp[6], comp[10].rstrip()]
-				scaffolds[comp[6]] = ""
+					entries[str(i)] = [name, comp[1], comp[2], comp[3], comp[4], comp[6], comp[10].rstrip()]
+					scaffolds[comp[6]] = ""
 				i += 1
-	with open(metaspades, "r") as scaf:
-	    read_in = False
-		read_string = ""
-		found = ""
-		for line in scaf:
-	    	if line[0] == ">":
-				read_in = False
-				if found != "":
-	    			scaffolds[found] = read_string
-		    		found = ""
-					read_string = ""
-			    	if line.rstrip()[1:] in list(scaffolds.keys()):
-						found = line.rstrip()[1:]
-						read_in = True
-					elif read_in:
-						read_string += line.rstrip()
-				
-				if found != "":
-					scaffolds[found] = read_string
+
+	for record in SeqIO.parse(metaspades, "fasta"):
+		if record.id in scaffolds:
+			scaffolds[record.id] = str(record.seq)
 					
 	with open(res_scaffolds, "w") as fasta:
 		for key in entries:
@@ -44,4 +34,5 @@ def collect_scaffolds(resfinder, metaspades, res_scaffolds)
 				fasta.write(fasta_string + "\n")
 				fasta.write(scaffolds[entries[key][-2]] + "\n")
 
+print("collect_scaffolds " + "\t".join([argv[1],argv[2],argv[3]]))
 collect_scaffolds(argv[1],argv[2],argv[3])
