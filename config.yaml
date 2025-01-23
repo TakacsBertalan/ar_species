@@ -1,9 +1,12 @@
 all:
   #parent folder of the outputs
-  output_fp: ar
+  input_fp: ""
+  output_folder: amr
   #csv formatted list of samples, without header. One sample per line, first column: sample name ("tag")
   samplelist_fp: samples.csv
-
+  #full path of the scripts folder
+  scripts: "/media/deltagene/microbiome_2/AR_snakemake/scripts/"
+  
 metaspades:
   threads: 10
   
@@ -15,5 +18,7 @@ kraken2:
   threads: 10
 
 blast:
-  db: "/media/deltagene/microbiome_2/blast_prok"
+  db: "/media/deltagene/microbiome_2/blast_prok/nt_prok"
+  e-value: "1e-5"
+  max_target: 5
   threads: 10

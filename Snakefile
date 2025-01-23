@@ -1,59 +1,76 @@
 import pandas as pd
-configfile: "sunbeam_config.yml"
+import os
+
+#Default path to configfile. Needs to be modified before running the pipeline or a new configfile needs to be set with the -c flag
+configfile: config.get("configfile", "/media/deltagene/microbiome_2/AR_snakemake/config.yaml")
+print(config)
+
 sample_file = config["all"]["samplelist_fp"]
-samples = pd.read_csv(sample_file).iloc[:,1]
-tags    = list(pd.read_csv(sample_file, header = None).iloc[:,0])
+output_folder = config["all"]["output_folder"]
+print(sample_file)
+
+tags = list(pd.read_csv(sample_file, header = None).iloc[:,0])
+
+try:
+	os.mkdir({output_folder})
+except:
+	print(f"Output folder {output_folder} already exists")
 
 rule all:
     input:
-        scaffolds=expand("amr/{tag}_metaspades/scaffolds.fasta", tag=tags),
-        results=expand("amr/{tag}_staramr/results.xlsx", tag=tags),
-        resistance=expand("amr/{tag}_collected_kraken_blast_results.tsv", tag=tags)
+        scaffolds=expand(output_folder + "/{tag}_metaspades/scaffolds.fasta", tag=tags),
+        results=expand(output_folder + "/{tag}_staramr/results.xlsx", tag=tags),
+        resistance=expand(output_folder + "/{tag}_collected_kraken_blast_results.tsv", tag=tags)
 
 rule metaspades:
     input:
-        r1="sunbeam_output/qc/cleaned/{tag}_1.fastq.gz",
-        r2="sunbeam_output/qc/cleaned/{tag}_2.fastq.gz"
+        r1="{config[all][input_fp]}/{tag}_1.fastq.gz",
+        r2="{config[all][input_fp]}/{tag}_2.fastq.gz"
     output:
-        metaspades=directory("amr/{tag}_metaspades"),
-        scaffolds="amr/{tag}_metaspades/scaffolds.fasta"
+        metaspades=directory("{output_folder}/{tag}_metaspades"),
+        scaffolds="{output_folder}/{tag}_metaspades/scaffolds.fasta"
+    threads:
+        config['metaspades']['threads']
     shell:
         """
         mkdir -p amr
-        metaspades -t 10 -1 {input.r1} -2 {input.r2} -o {output.metaspades} -t 10
+        metaspades -t 10 -1 {input.r1} -2 {input.r2} -o {output.metaspades} -t {threads}
         """
 
 rule staramr:
     input:
         metaspades = "amr/{tag}_metaspades/scaffolds.fasta"
     output:
-        staramr = directory("amr/{tag}_staramr/"),
-        results = "amr/{tag}_staramr/results.xlsx",
-        resfinder = "amr/{tag}_staramr/resfinder.tsv"
+        staramr = directory("{output_folder}/{tag}_staramr/"),
+        results = "{output_folder}/{tag}_staramr/results.xlsx",
+        resfinder = "{output_folder}/{tag}_staramr/resfinder.tsv"
+    threads:
+        config['staramr']['threads']
     shell:
         """
         rm -rf {output.staramr}
-        staramr search -o {output.staramr} {input.metaspades} -n 10
+        staramr search -o {output.staramr} {input.metaspades} -n {threads}
         """
 
 rule select:
     input:
-        metaspades = "amr/{tag}_metaspades/scaffolds.fasta",
-        resistances = "amr/{tag}_staramr/resfinder.tsv"
+        metaspades = "{output_folder}/{tag}_metaspades/scaffolds.fasta",
+        resistances = "{output_folder}/{tag}_staramr/resfinder.tsv"
     output:
-        resistance_scaffolds = "amr/{tag}_resistance_scaffolds.fasta"
+        resistance_scaffolds = "{output_folder}/{tag}_resistance_scaffolds.fasta"
     shell:
         """
-        python /media/deltagene/microbiome_2/AR_snakemake/scripts/select_scaffolds.fasta {input.metaspades} {input.resistances} {output.resistance_scaffolds}
+        python {config[all][scripts]}/select_scaffolds.py {input.metaspades} {input.resistances} {output.resistance_scaffolds}
         """
 
 rule kraken:
     input:
-        resistance_scaffolds = "amr/{tag}_resistance_scaffolds.fasta",
-        kraken2_db = "/media/deltagene/microbiome_2/k2_plsupf_16gb_20240112"
+        resistance_scaffolds = "{output_folder}/{tag}_resistance_scaffolds.fasta",
+        kraken2_db = config["kraken2"]["db"]
     output:
-        kraken2_out = "amr/{tag}_kraken2_results.txt"
-    threads: 10
+        kraken2_out = "{output_folder}/{tag}_kraken2_results.txt"
+    threads:
+        config['kraken2']['threads']
     shell:
         """
         kraken2 --output {output.kraken2_out} --db {input.kraken2_db} --threads {threads} {input.resistance_scaffolds}
@@ -61,37 +78,29 @@ rule kraken:
         
 rule blast:
     input:
-        resistance_scaffolds = "amr/{tag}_resistance_scaffolds.fasta",
-        blast_db = "/media/deltagene/microbiome_2/k2_plsupf_16gb_20240112"
+        resistance_scaffolds = "{output_folder}/{tag}_resistance_scaffolds.fasta",
+        
     output:
-        blast_out = "amr/{tag}_blast_results.txt"
-    threads: 10
+        blast_out = "{output_folder}/{tag}_blast_results.txt"
+    threads:
+        config['blast']['threads']
     params:
-        evalue = "1e-5"
+        evalue = config["blast"]["e-value"],
+        blast_db = config["blast"]["db"]
     shell:
         """
-        blastn -query {input.resistance_scaffolds} -db {input.blast_db} -out {output.blast_out} -evalue {params.evalue} -outfmt \"6 qseqid sseqid stitle pident length qstart qend sstart send evalue bitscore\" -num_threads {threads} -max_hsps 1 -max_target_seqs 5
+        blastn -query {input.resistance_scaffolds} -db {params.blast_db} -out {output.blast_out} -evalue {params.evalue} -outfmt \"6 qseqid sseqid stitle pident length qstart qend sstart send evalue bitscore\" -num_threads {threads} -max_hsps 1 -max_target_seqs 5
         """
         
 rule collect:
     input:
-        resistance_scaffolds = "amr/{tag}_staramr/resfinder.tsv",
-        kraken2_out = "amr/{tag}_kraken2_results.txt",
-        blast_out = "amr/{tag}_blast_results.txt",
+        resistance_scaffolds = "{output_folder}/{tag}_staramr/resfinder.tsv",
+        kraken2_out = "{output_folder}/{tag}_kraken2_results.txt",
+        blast_out = "{output_folder}/{tag}_blast_results.txt",
         taxonomy = "/media/data/Sunbeam/regi_kraken2/taxonomy"
     output:
-        results = "amr/{tag}_collected_kraken_blast_results.tsv"
+        results = "{output_folder}/{tag}_collected_kraken_blast_results.tsv"
     shell:
         """
-        python collect.py {input.resistance_scaffolds} {input.kraken2_out} {input.taxonomy} {input.blast_out} {output.results}
+        python {config[all][scripts]}/improved_collect.py {input.resistance_scaffolds} {input.kraken2_out} {input.taxonomy} {input.blast_out} {output.results}
         """
-"""
-rule kraken_and_blast:
-    input:
-        scaffolds=expand("{tag}_metaspades/scaffolds.fasta",tag = tags),
-        results=expand("{tag}_staramr/results.xlsx",tag = tags)
-    output:
-        "resistances_with_species_kraken_blast.tsv"
-    shell:
-        "python /media/deltagene/microbiome_2/AR_snakemake/scripts/collect_and_kraken.py ./"
-"""
